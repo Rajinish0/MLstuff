@@ -205,7 +205,8 @@ class Sequential(nn.Sequential):
         print(i, tloss/tbatches,end='\r')
       self.TrainLosses.append(tloss/tbatches)
       if verbose:
-        print(_+1,tloss/tbatches, (self(X).argmax(1) == y).numpy().mean(),end='\r')
+        print(_+1,tloss/tbatches,end='\r')
+#         print(_+1,tloss/tbatches, (self(X).argmax(1) == y).numpy().mean(),end='\r')
       print()
     return self
 
