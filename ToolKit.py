@@ -1,22 +1,23 @@
 import torch,copy
 from torch import nn
+from torchvision.datasets import MNIST
+from torchvision import transforms
+from torch.utils.data import DataLoader
 class Input(nn.Module):
 	def __init__(self,input_shape):
 		super().__init__()
 		self.units = input_shape
 		self.store_output = False
 		self.output = False
-		# self.layer =nn.Linear(1,2)
-		# self._backward_hooks,self._forward_hooks,self._forward_pre_hooks= torch.tensor([]),torch.tensor([]),torch.tensor([])
 
 	@property
 	def built(self):
 		return True
 	
 	def forward(self,X):
-		out = X*1
+		out = X
 		self.output = out if self.store_output else None
-		return out
+		return X
 
 	def copy(self):
 		return self
@@ -41,6 +42,7 @@ class Dense(nn.Module):
 	def built(self):
 		return True if self.W is not None else False
 
+
 	def forward(self,X):
 		try:
 			act = self.activation(self.W(X))
@@ -64,6 +66,7 @@ class Dense(nn.Module):
 		else:
 				d.W = None
 		return d
+
 
 class Concat(nn.Module):
 	def __init__(self,index):
@@ -97,6 +100,11 @@ class Concat(nn.Module):
 	def copy(self):
 		return Concat(copy.copy(self.index))
 
+
+	def Check(self):
+		if not self.layer.units == self.layer2.units:
+			raise Exception('layer1 {} layer2 {} units not equal'.format(self.layer,self.layer2))
+
 class Add(Concat):
 	def __init__(self,index):
 		# nn.Module.__init__(self)
@@ -121,8 +129,11 @@ class Add(Concat):
 	def Check(layer,layer2):
 		if not layer.units == layer2.units:
 			raise Exception('layer1 {} layer2 {} units not equal'.format(layer,layer2))
-class Sequential():
+
+class Sequential(nn.Sequential):
   def __init__(self,layers=[]):
+    super().__init__()
+    # super().__init__()
     self.layers = layers
     self.isCompiled= False
     self.Model = self.build()
@@ -137,25 +148,28 @@ class Sequential():
       return
 
     for ind, layer in enumerate(self.layers):
-      if isinstance(layer,Input):
-        layers.append(layer)
-        continue
-
       if isinstance(layer,Concat):
         layer.build(layers[-1], self)        
         layers.append(layer)
         continue
 
-      kwargs = {} if layer.rawactivation is not nn.Softmax else {'dim':1}
-      if layer.W is None:
-        W = nn.Linear(self.layers[ind-1].units,layer.units)
-        layer.W = W
-        layers.append(layer)
-        layer.activation = layer.activation(**kwargs)
+      elif isinstance(layer, Dense):
+        kwargs = {} if layer.rawactivation is not nn.Softmax else {'dim':1}
+        if layer.W is None:
+            try:
+                W = nn.Linear(self.layers[ind-1].units,layer.units)
+            except:
+                W = nn.Linear(self.layers[ind-1].num_features,layer.units)        		
+            layer.W = W
+            layers.append(layer)
+            layer.activation = layer.activation(**kwargs)
+        else:
+            layers.append(layer)
+            layer.activation = copy.deepcopy(layer.rawactivation(**kwargs))
+
       else:
         layers.append(layer)
-        layer.activation = copy.deepcopy(layer.rawactivation(**kwargs))
-
+        continue
     return nn.Sequential(*layers)
 
   def add(self,layer):
@@ -166,22 +180,33 @@ class Sequential():
     return self.Model(X)
 
   def parameters(self):
-    return (weight for layer in self.Model
+    return self.Model.parameters()
+    return [weight for layer in self.Model
 				if isinstance(layer,Dense) 
-				for weight in [layer.W.weight,layer.W.bias])
+				for weight in [layer.W.weight,layer.W.bias]]
   
-  def fit(self,X,y,epochs,verbose=0):
+  def fit(self,X,y,epochs,verbose=0,batch_size=32):
     assert self.isCompiled
+    if batch_size == 0:
+      btchs = [(X,y)]
+    else:
+      btchs = DataLoader(list(zip(X,y)),batch_size=batch_size)
     for _ in range(epochs):
-      pred = self.forward(X)
-      l = self.loss(pred,y)
-      l.backward()
-      self.optim.step()
-      self.optim.zero_grad()
+      tloss = 0
+      tbatches = 0
+      for i,(xb, yb) in enumerate(btchs):
+        pred = self(xb)
+        l = self.loss(pred,yb)
+        l.backward()
+        self.optim.step()
+        self.optim.zero_grad()
+        tloss += l
+        tbatches += (i+1)
+        print(i, tloss/tbatches,end='\r')
+      self.TrainLosses.append(tloss/tbatches)
       if verbose:
-        print(_+1, l.detach(),end='\r')
-      self.TrainLosses.append(l)
-    print()  
+        print(_+1,tloss/tbatches, (self(X).argmax(1) == y).numpy().mean(),end='\r')
+      print()
     return self
 
   def __call__(self,X):
@@ -200,26 +225,35 @@ class Sequential():
       
   def __repr__(self):
     return self.Model.__repr__()
+
+
   
 if __name__ == '__main__':
   from sklearn.datasets import load_digits
-  d = load_digits()
-  X,y = d['data'],d['target'].reshape(-1)
-  X,y = torch.tensor(X).float(),torch.tensor(y).long()
-  model = Sequential([Input(64),
+  # d = load_digits()
+  # X,y = d['data'],d['target'].reshape(-1)
+  # X,y = torch.tensor(X).float(),torch.tensor(y).long()
+  print('Fetching data..')
+  d = MNIST(root='C:\\users\\owner\\myTrain.pt',transform=transforms.ToTensor())
+  X = torch.stack([img.reshape(28*28) for (img,_) in d])
+  y = torch.stack([torch.tensor(_) for (img,_) in d])
+  print('Initiating training..')
+  model = Sequential([Input(28*28),
                     Dense(64,activation=nn.ReLU),
+                    nn.BatchNorm1d(64),
                     Dense(64,activation=nn.ReLU),
+                    nn.BatchNorm1d(64),
                     Dense(10,activation=nn.Softmax)])
 
-  model2 = Sequential([Input(64),
+  model2 = Sequential([Input(28*28),
                      Dense(128,activation=nn.ReLU),
                      Dense(64,activation=nn.ReLU),
                      Concat(1), ## (concat with Dense(128)-- layer 1)
                      Dense(10,activation=nn.Softmax)])
 
   model.compile(optim=torch.optim.Adam(model.parameters(),lr=1e-3),loss=nn.CrossEntropyLoss())
-  model.fit(X,y,epochs=400,verbose=1)
+  model.fit(X,y,epochs=20,verbose=1,batch_size=32)
   
   model2.compile(optim=torch.optim.Adam(model2.parameters(),lr=1e-3),loss=nn.CrossEntropyLoss())
-  model2.fit(X,y,epochs=400,verbose=1)
+  model2.fit(X,y,epochs=20,verbose=1,batch_size=32)
     
