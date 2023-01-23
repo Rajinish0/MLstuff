@@ -19,8 +19,9 @@ a = var(np.random.randn(32, 4))
 b = var(np.random.randn(32, 4))
 c = (0.5*(a-b)**2).sum()
 
-a.backward()
-b.backward()
+c.backward()
+
+a.grad, b.grad
 
 currently has the ability to create neural nets without the bias terms. 
 '''
