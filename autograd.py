@@ -205,6 +205,17 @@ class Grad:
 		def backward(self, grad):
 			self.a.backward(-grad)
 
+	class Log(Node):
+		def __call__(self, a):
+			self.a = a 
+			return Grad.Variable(
+				np.log(self.a._val),
+				self 
+				)
+
+		def backward(self, grad):
+			self.a.backward(grad/self.a._val)
+
 	class Variable:
 		def __init__(self, val, node = None, requires_grad = True):
 			self._val = np.array(val)
