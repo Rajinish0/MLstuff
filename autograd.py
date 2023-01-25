@@ -47,7 +47,7 @@ class Grad:
 		## a was added to something and was broadcasted to get output
 		'''
 		NEED TO FIX (squeeze according to shape): 
-		i'm not called out.squeeze() because for instance if 
+		i'm not calling out.squeeze() because for instance if 
 		a.shape = (1, 4, 1, 3)
 		then it should stay like that, out.squeeze would make it (4, 3)
 		'''
