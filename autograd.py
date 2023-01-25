@@ -21,7 +21,7 @@ c.backward()
 
 a.grad, b.grad
 
-currently has the ability to create neural nets without the bias terms. 
+currently has the ability to create simple neural nets. 
 '''
 
 class Grad:
