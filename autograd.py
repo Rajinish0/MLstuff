@@ -268,7 +268,7 @@ class Grad:
 			padHeight = (imh + kh -1 -gradh)//2
 			padWidth = (imw+kw-1-gradw)//2
 			self.kernel.backward(  
-			np.transpose(convFunc( np.transpose(X._val, (3, 1, 2, 0) ), 
+			np.transpose(convFunc( np.transpose(self.X._val, (3, 1, 2, 0) ), 
 							  	  np.transpose(grad,   (3, 1, 2, 0) ) ),
 							  	  (3, 1, 2, 0) ))
 
