@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.signal import fftconvolve
+
 '''
 a pytorch like mini automatic diff. library. 
 usage : 
@@ -22,7 +24,25 @@ c.backward()
 a.grad, b.grad
 
 currently has the ability to create simple neural nets. 
+
+the conv2d node is experimental, although it is working (the grads are flowing, loss is going down) I haven't checked if my partial derivatives are actually correct
+need to tie the weights with torch or tf and make the checks.
+
+W for conv2d is of shape (nK, kH, kW, nC) where nK = num of kernels, kH/W= kernel height/width, nC is number of input channels
 '''
+
+def convFunc(x, kernel):
+    ## i could do this by getting submatrices of the x matrix of size kernel each, but that'd require me store all of them. So I went the easy way and just looped through
+    ## the batch size and number of kernels which should be considerably smaller than image size (on average), so this should be on average faster than looping through an image
+    bs, imgh, imgw, _ = x.shape
+    nK, kh, kw, _ = kernel.shape
+    o = np.empty((bs, imgh-kh+1, imgw-kw+1, nK))
+    for b in range(bs):
+        for k in range(nK):
+            o[b, :, :, k] = fftconvolve(x[b], kernel[k], 'valid')[..., 0] ## I'm not yet sure how to extend my code for simple 1d fft to 2d fft, but this should be faster than the convolve function
+    return o
+
+
 
 class Grad:
 
@@ -30,6 +50,8 @@ class Grad:
 	TO DO:
 	-> functionality to enable disable graph making
 	-> add axis functionality to sum
+	-> functionality of padding, strides for conv2d.
+	-> gradient checks for conv2d.
 	'''
 	# ## vars
 	# _makeGraph = True
@@ -46,8 +68,8 @@ class Grad:
 	def undobroadCast(a, output):
 		## a was added to something and was broadcasted to get output
 		'''
-		NEED TO FIX (squeeze according to shape): 
-		i'm not calling out.squeeze() because for instance if 
+		NEED TO FIX : 
+		i'm not called out.squeeze() because for instance if 
 		a.shape = (1, 4, 1, 3)
 		then it should stay like that, out.squeeze would make it (4, 3)
 		'''
@@ -216,12 +238,55 @@ class Grad:
 		def backward(self, grad):
 			self.a.backward(grad/self.a._val)
 
+	class Flatten(Node):
+		def __call__(self, a):
+			self.a = a
+			bs = a._val.shape[0]
+			return Grad.Variable(
+				self.a._val.reshape(bs, -1),
+				self
+				)
+
+		def backward(self, grad):
+			self.a.backward(grad.reshape(self.a._val.shape))
+
+
+	class Conv2D(Node):
+		def __call__(self, X, kernel):
+			self.X = X 
+			self.kernel = kernel
+			return Grad.Variable( convFunc(X._val, kernel._val),
+								  self)
+
+
+		def backward(self, grad):
+			_, kh, kw, _ = self.kernel.shape 
+			_, imh, imw, _ = self.X.shape 
+			_, gradh, gradw, _ = grad.shape
+
+			## gradh-kh+1+2p = imh -> 2p = imh+kh-gradh-1
+			padHeight = (imh + kh -1 -gradh)//2
+			padWidth = (imw+kw-1-gradw)//2
+			self.kernel.backward(  
+			np.transpose(convFunc( np.transpose(X._val, (3, 1, 2, 0) ), 
+							  	  np.transpose(grad,   (3, 1, 2, 0) ) ),
+							  	  (3, 1, 2, 0) ))
+
+			self.X.backward(
+				convFunc(np.pad(grad, ((0,0), (padHeight,padHeight), (padWidth,padWidth), (0,0))),
+				   		 np.transpose(self.kernel._val, (3, 1,2,0))[:, ::-1, ::-1, :] )
+				)
 	class Variable:
 		def __init__(self, val, node = None, requires_grad = True):
 			self._val = np.array(val)
 			self._node = node
 			self.grad = None
 			self.requires_grad = requires_grad
+
+		@property
+		def shape(self):
+			return self._val.shape
+		
 
 		def __repr__(self):
 			return str(self._val)
@@ -235,6 +300,7 @@ class Grad:
 
 		def grad_zero(self):
 			self.grad *= 0
+			# del self._node 
 			return self 
 
 		def sum(self):
@@ -280,12 +346,13 @@ class Grad:
 			if self._node: self._node.backward(grad)
 			
 
-'''
-TESTS
-var = Grad.Variable
 
+'''	
+TESTS
 import torch
 from torch import nn
+
+var = Grad.Variable
 
 # a = var(2)
 # b = var(3)
@@ -381,6 +448,35 @@ print(y._val.sum(axis=0))
 print(x.grad)
 print(y.grad)
 print(x)
+
+
+
+X = var(np.random.randn(32, 28, 28, 3)/100, requires_grad=False)
+y = np.random.randn(32, 10)
+W1 = var(np.random.randn(2, 3, 3, 3))
+W3 = var(np.random.randn(1352, 10))
+
+
+for i in range(25):
+	o = Grad.Conv2D()(X, W1)
+	o = Grad.Flatten()(o)
+	o = o@W3
+
+	L = (0.5*(o-y)**2).sum()
+	print(L)
+	L.backward()
+	W1 = W1 - (1e-2)*W1.grad
+	W3 = W3 - (1e-2)*(W3.grad)
+	W1._node = None 
+	W3._node = None
+# W1.grad_zero()
+# W3.grad_zero()
+
+	# print(W1.grad.shape)
+	# print(W3.grad.shape)
+
+
+# X = var (np.random.randn(32, 28, 38, 3))
 
 
 # e = b**(2)
