@@ -50,7 +50,7 @@ class Grad:
 	TO DO:
 	-> functionality to enable disable graph making
 	-> add axis functionality to sum
-	-> functionality of padding, strides for conv2d.
+	-> functionality of padding for conv2d.
 	-> gradient checks for conv2d.
 	'''
 	# ## vars
@@ -102,7 +102,6 @@ class Grad:
 	class Add(Node):
 
 		def __call__(self, a, b):
-			## need to fix if the shapes are not equal
 			self.a = a
 			self.b = b
 			return Grad.Variable(self.a._val + self.b._val, self)
@@ -252,25 +251,33 @@ class Grad:
 
 
 	class Conv2D(Node):
-		def __call__(self, X, kernel):
+		def __call__(self, X, kernel, strides=(1,1)):
 			self.X = X 
 			self.kernel = kernel
-			return Grad.Variable( convFunc(X._val, kernel._val),
+			self.sh = strides[0]
+			self.sw = strides[1]
+			return Grad.Variable( convFunc(X._val, kernel._val)[:, ::self.sh, ::self.sw, :],
 								  self)
 
 
 		def backward(self, grad):
-			_, kh, kw, _ = self.kernel.shape 
-			_, imh, imw, _ = self.X.shape 
+			nK, kh, kw, _ = self.kernel.shape 
+			bs, imh, imw, _ = self.X.shape 
+			## if strides=1, then grad.shape would have been
+			## imh-kh+1, this is just the simplest way i could think of to put 0s in grad. 
+			g = np.zeros((bs, imh-kh+1, imw-kw+1, nK))
+			g[:, ::self.sh, ::self.sw, :] = grad
+			grad = g
+
 			_, gradh, gradw, _ = grad.shape
 
 			## gradh-kh+1+2p = imh -> 2p = imh+kh-gradh-1
 			padHeight = (imh + kh -1 -gradh)//2
 			padWidth = (imw+kw-1-gradw)//2
-			self.kernel.backward(  
-			np.transpose(convFunc( np.transpose(self.X._val, (3, 1, 2, 0) ), 
-							  	  np.transpose(grad,   (3, 1, 2, 0) ) ),
-							  	  (3, 1, 2, 0) ))
+
+			self.kernel.backward(  np.transpose(convFunc( np.transpose(self.X._val, (3, 1, 2, 0) ), 
+							  	 	   np.transpose(grad,   (3, 1, 2, 0) ) ),
+							  	  (3, 1, 2, 0) ) )
 
 			self.X.backward(
 				convFunc(np.pad(grad, ((0,0), (padHeight,padHeight), (padWidth,padWidth), (0,0))),
@@ -299,7 +306,8 @@ class Grad:
 			return self
 
 		def grad_zero(self):
-			self.grad *= 0
+			self.grad = None
+			self._node = None
 			# del self._node 
 			return self 
 
