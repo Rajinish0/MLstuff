@@ -25,8 +25,10 @@ a.grad, b.grad
 
 currently has the ability to create simple neural nets. 
 
-the conv2d node is experimental, although it is working (the grads are flowing, loss is going down) I haven't checked if my partial derivatives are actually correct
-need to tie the weights with torch or tf and make the checks.
+I checked Conv2d's grads probabilistically : I sampled n weights from different layers of the network, w1...wn. For each of them calculated 
+(L(wk+eps)-L(wk))/eps, where L is the loss function,  and found it to be within the reasonable interval surrounding wk's gradient my library calculated. 
+The odds that I get all these n gradients correct from different layers of my network given that I'm calculating the wrong gradients are significantly low. So I had to 
+only check if these n random gradients were sufficiently correct, and didn't have to go through the whole network's weights to affirm the correctness of my gradients.
 
 W for conv2d is of shape (nK, kH, kW, nC) where nK = num of kernels, kH/W= kernel height/width, nC is number of input channels
 '''
@@ -39,7 +41,8 @@ def convFunc(x, kernel):
     o = np.empty((bs, imgh-kh+1, imgw-kw+1, nK))
     for b in range(bs):
         for k in range(nK):
-            o[b, :, :, k] = fftconvolve(x[b], kernel[k], 'valid')[..., 0] ## I'm not yet sure how to extend my code for simple 1d fft to 2d fft, but this should be faster than the convolve function
+	    ## fftconvolve automatically inverts the kernel.
+            o[b, :, :, k] = fftconvolve(x[b], kernel[k, ::-1, ::-1, ::-1], 'valid')[..., 0] ## I'm not yet sure how to extend my code for simple 1d fft to 2d fft, but this should be faster than the convolve function
     return o
 
 
@@ -51,7 +54,6 @@ class Grad:
 	-> functionality to enable disable graph making
 	-> add axis functionality to sum
 	-> functionality of padding for conv2d.
-	-> gradient checks for conv2d.
 	'''
 	# ## vars
 	# _makeGraph = True
