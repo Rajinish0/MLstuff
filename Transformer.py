@@ -84,8 +84,8 @@ tablePt = tf.lookup.StaticVocabularyTable(table_init1, num_oov_buckets)
 
 
 def preprocess(x, y):
-    x = tf.strings.split("[START] " + x + " [END]")
-    y = tf.strings.split("[START] " + y)
+    x = tf.strings.split(x)
+    y = tf.strings.split("[START] " + y + " [END]")
     return (x.to_tensor(default_value = '<pad>'), y.to_tensor(default_value='<pad>'))
 
 
@@ -284,7 +284,8 @@ def myAcc(ytrue, ypred):
     mask = tf.cast(K.not_equal(ytrue, 0), tf.float32)
     return tf.reduce_sum(a*mask)/tf.reduce_sum(mask)
 
-
+## i used a custom scheduler for lr but it kept blowing the grads to nan, 1e-5 has a slower convergence speed, 
+## but can be wiggled around after the loss has sufficiently decreased.
 optim = keras.optimizers.Adam(learning_rate=1e-5, clipvalue=1.0)
 model.compile(loss=lossfn, optimizer=optim, metrics=[myAcc])
 model.fit(data, epochs=3, validation_data=val_data)
